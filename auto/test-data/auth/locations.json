@@ -1,0 +1,30 @@
+{
+  "stores": [
+    {
+      "code": "TKY001",
+      "name": "Tokyo Main Store",
+      "buildings": [
+        {
+          "code": "TKY001-A",
+          "name": "Building A",
+          "locations": [
+            {
+              "code": "TKY001-A-1B",
+              "name": "Floor 1B"
+            },
+            {
+              "code": "TKY001-A-2B",
+              "name": "Floor 2B"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultLocation": {
+    "storeCode": "TKY001",
+    "buildingCode": "TKY001-A",
+    "locationCode": "TKY001-A-1B"
+  }
+}
+

@@ -1,0 +1,34 @@
+{
+  "longInputs": {
+    "longEmail": "a".repeat(200) + "@example.com",
+    "longPassword": "a".repeat(500),
+    "longEmployeeCode": "EMP" + "0".repeat(100)
+  },
+  "specialCharacters": {
+    "emailWithSpecialChars": [
+      "test+tag@example.com",
+      "user.name@example.co.jp",
+      "user_name@example.com"
+    ],
+    "passwordWithSpecialChars": [
+      "P@ssw0rd!",
+      "Test$123#",
+      "Weblife_123",
+      "Pass&Word*"
+    ]
+  },
+  "unicodeInputs": {
+    "unicodeEmail": "テスト@example.com",
+    "unicodePassword": "パスワード123"
+  },
+  "whitespaceInputs": {
+    "emailWithWhitespace": "  test@example.com  ",
+    "passwordWithWhitespace": "  password123  "
+  },
+  "caseVariations": {
+    "mixedCaseEmail": "Test@Example.com",
+    "uppercaseEmail": "TEST@EXAMPLE.COM",
+    "lowercaseEmail": "test@example.com"
+  }
+}
+

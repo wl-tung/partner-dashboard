@@ -1,0 +1,46 @@
+{
+  "orders": {
+    "sampleOrder": {
+      "orderNumber": "ORD-20241127-001",
+      "status": "処理中",
+      "customerName": "田中 太郎",
+      "customerEmail": "tanaka@example.com",
+      "amount": 35400,
+      "items": [
+        {
+          "name": "商品A",
+          "quantity": 2,
+          "price": 17700
+        }
+      ]
+    }
+  },
+  "customers": {
+    "sampleCustomer": {
+      "name": "山田 花子",
+      "email": "yamada@example.com",
+      "phone": "090-1234-5678",
+      "address": {
+        "postalCode": "100-0001",
+        "prefecture": "東京都",
+        "city": "千代田区",
+        "address1": "千代田1-1-1"
+      }
+    }
+  },
+  "accounts": {
+    "sampleAccount": {
+      "employeeCode": "TEST001",
+      "accountName": "テストユーザー",
+      "email": "test@example.com",
+      "role": "Store Owner",
+      "status": "Active"
+    }
+  },
+  "locations": {
+    "store": "TKY001",
+    "building": "TKY001-A",
+    "location": "TKY001-A-1B"
+  }
+}
+
