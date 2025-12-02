@@ -300,18 +300,36 @@ export class DashboardPage extends BasePage {
 
   /**
    * Navigate to orders page via sidebar
-   * ENHANCED: Uses flexible selectors and proper navigation waiting
+   * ENHANCED: Expands menu first, then clicks link (matches actual UI structure)
    */
   async navigateToOrders(): Promise<void> {
-    // Try multiple strategies
-    const strategies = [
+    // First, click the orders button to expand the menu
+    const expandStrategies = [
       () => this.ordersButton.click(),
       () => this.page.getByRole('button', { name: /注文|Order/i }).click(),
-      () => this.page.click('text=注文管理'),
-      () => this.page.click('text=Order Management')
+      () => this.page.click('button:has-text("注文管理")'),
+      () => this.page.click('button:has-text("Order Management")')
     ];
 
-    for (const strategy of strategies) {
+    for (const strategy of expandStrategies) {
+      try {
+        await strategy();
+        await this.page.waitForTimeout(500); // Wait for menu to expand
+        break;
+      } catch (e) {
+        continue;
+      }
+    }
+
+    // Then click the actual link in the expanded menu
+    const linkStrategies = [
+      () => this.page.click('a[href="/orders"]'),
+      () => this.page.click('text=注文一覧'),
+      () => this.page.click('text=Order List'),
+      () => this.page.getByRole('link', { name: /注文|Order/i }).click()
+    ];
+
+    for (const strategy of linkStrategies) {
       try {
         await strategy();
         await this.page.waitForURL(/.*\/orders/, { timeout: 5000 });
@@ -326,18 +344,36 @@ export class DashboardPage extends BasePage {
 
   /**
    * Navigate to customers page via sidebar
-   * ENHANCED: Uses flexible selectors and proper navigation waiting
+   * ENHANCED: Expands menu first, then clicks link (matches actual UI structure)
    */
   async navigateToCustomers(): Promise<void> {
-    // Try multiple strategies
-    const strategies = [
+    // First, click the customers button to expand the menu
+    const expandStrategies = [
       () => this.customersButton.click(),
       () => this.page.getByRole('button', { name: /顧客|Customer/i }).click(),
-      () => this.page.click('text=顧客管理'),
-      () => this.page.click('text=Customer Management')
+      () => this.page.click('button:has-text("顧客管理")'),
+      () => this.page.click('button:has-text("Customer Management")')
     ];
 
-    for (const strategy of strategies) {
+    for (const strategy of expandStrategies) {
+      try {
+        await strategy();
+        await this.page.waitForTimeout(500); // Wait for menu to expand
+        break;
+      } catch (e) {
+        continue;
+      }
+    }
+
+    // Then click the actual link in the expanded menu
+    const linkStrategies = [
+      () => this.page.click('a[href="/customers"]'),
+      () => this.page.click('text=顧客一覧'),
+      () => this.page.click('text=Customer List'),
+      () => this.page.getByRole('link', { name: /顧客|Customer/i }).click()
+    ];
+
+    for (const strategy of linkStrategies) {
       try {
         await strategy();
         await this.page.waitForURL(/.*\/customers/, { timeout: 5000 });

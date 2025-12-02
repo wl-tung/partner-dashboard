@@ -56,11 +56,22 @@ function getDefaultUser(role: UserRole): User {
 export const test = base.extend<AuthFixtures>({
   /**
    * Authenticated page - automatically logs in before test
+   * FIXED: Now waits for dashboard to fully load after login
    */
   authenticatedPage: async ({ page, loginPage }, use) => {
     const user = getDefaultUser(UserRole.STORE_OWNER);
     await loginPage.goto();
     await loginPage.login(user);
+
+    // Wait for dashboard to load
+    await page.waitForURL(/.*\/$/, { timeout: 10000 });
+
+    // Wait for page to be fully loaded
+    await page.waitForLoadState('networkidle', { timeout: 10000 });
+
+    // Give the SPA time to initialize
+    await page.waitForTimeout(2000);
+
     await use(page);
   },
 
@@ -115,7 +126,7 @@ export const test = base.extend<AuthFixtures>({
   /**
    * Store Owner user fixture
    */
-  storeOwnerUser: async ({}, use) => {
+  storeOwnerUser: async ({ }, use) => {
     const user = getDefaultUser(UserRole.STORE_OWNER);
     await use(user);
   },
@@ -123,7 +134,7 @@ export const test = base.extend<AuthFixtures>({
   /**
    * Mall Administrator user fixture
    */
-  adminUser: async ({}, use) => {
+  adminUser: async ({ }, use) => {
     const user = getDefaultUser(UserRole.MALL_ADMINISTRATOR);
     await use(user);
   }
