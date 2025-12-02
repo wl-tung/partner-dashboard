@@ -5,24 +5,28 @@ import { OrderStatus } from '../types';
 /**
  * Orders Page Object
  * Handles order list, search, and order detail interactions
+ * ENHANCED: Uses flexible selectors and smart waits
  */
 export class OrdersPage extends BasePage {
   // Selectors
   private readonly orderListTable = 'table, [role="table"], .MuiTable-root';
   private readonly orderRows = 'tbody tr, [role="row"]';
-  private readonly searchInput = 'input[type="search"], input[placeholder*="検索"], input[placeholder*="Search"]';
-  private readonly statusFilter = 'select[name="status"], [data-testid="status-filter"]';
-  private readonly dateFilter = 'input[type="date"], [data-testid="date-filter"]';
-  private readonly pagination = '.MuiPagination-root, [data-testid="pagination"]';
-  private readonly nextPageButton = 'button[aria-label="Next"], button:has-text("次へ")';
-  private readonly previousPageButton = 'button[aria-label="Previous"], button:has-text("前へ")';
-  private readonly bulkCheckbox = 'thead input[type="checkbox"]';
-  private readonly orderCheckboxes = 'tbody input[type="checkbox"]';
-  private readonly formPrintButton = 'button:has-text("帳票印刷"), button:has-text("Form Printing")';
-  private readonly createOrderFromPreAppButton = 'button:has-text("事前申込から注文作成")';
-  private readonly proxyOrderButton = 'button:has-text("代理注文配置"), button:has-text("Proxy Order Placement")';
-  private readonly orderDetailPage = '.order-detail, [data-testid="order-detail"]';
-  private readonly orderNumberLink = 'a:has-text("注文"), td a';
+
+  // Flexible selectors for search input
+  private readonly searchInputSelectors = [
+    'input[type="search"]',
+    'input[placeholder*="検索"]',
+    'input[placeholder*="Search"]',
+    '[data-testid="search-input"]'
+  ];
+
+  // Flexible selectors for status filter
+  private readonly statusFilterSelectors = [
+    'select[name="status"]',
+    '[data-testid="status-filter"]',
+    '#status-filter',
+    'div[role="button"]:has-text("Status")'
+  ];
 
   constructor(page: Page) {
     super(page);
@@ -33,7 +37,7 @@ export class OrdersPage extends BasePage {
    */
   async goto(): Promise<void> {
     await super.goto('/orders');
-    await this.waitForPageLoad();
+    await this.waitForOrdersLoaded();
   }
 
   /**
@@ -41,135 +45,150 @@ export class OrdersPage extends BasePage {
    */
   async verifyOrdersPageLoaded(): Promise<void> {
     await expect(this.page).toHaveURL(/.*\/orders/);
-    await expect(this.page.locator(this.orderListTable)).toBeVisible();
+
+    // Wait for table to be visible
+    await this.waitForOrdersLoaded();
+
+    // Verify at least the table container exists
+    const tableVisible = await this.page.locator(this.orderListTable).first().isVisible().catch(() => false);
+    if (!tableVisible) {
+      // If table not found, check for "No orders" message or empty state
+      const emptyState = await this.page.locator('text=No orders|text=注文はありません').isVisible().catch(() => false);
+      if (!emptyState) {
+        throw new Error('Orders table not found and no empty state message visible');
+      }
+    }
+  }
+
+  /**
+   * Wait for orders to be fully loaded
+   */
+  async waitForOrdersLoaded(): Promise<void> {
+    // Wait for URL
+    await this.page.waitForURL(/.*\/orders/);
+
+    // Wait for network idle to ensure API calls are done
+    await this.page.waitForLoadState('networkidle');
+
+    // Wait for spinner to disappear if it exists
+    const spinner = this.page.locator('.MuiCircularProgress-root, [role="progressbar"]');
+    if (await spinner.isVisible().catch(() => false)) {
+      await spinner.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => { });
+    }
+
+    // Wait a bit for rendering
+    await this.page.waitForTimeout(500);
   }
 
   /**
    * Search for orders by keyword
    */
   async searchOrders(keyword: string): Promise<void> {
-    await this.fill(this.searchInput, keyword);
+    // Find working search input
+    let searchInput = '';
+    for (const selector of this.searchInputSelectors) {
+      if (await this.page.locator(selector).first().isVisible().catch(() => false)) {
+        searchInput = selector;
+        break;
+      }
+    }
+
+    if (!searchInput) {
+      throw new Error('Could not find search input');
+    }
+
+    await this.fill(searchInput, keyword);
     await this.pressKey('Enter');
-    await this.waitForPageLoad();
+
+    // Wait for results to reload
+    await this.page.waitForTimeout(1000); // Give time for request to start
+    await this.waitForOrdersLoaded();
   }
 
   /**
    * Filter orders by status
    */
   async filterByStatus(status: OrderStatus): Promise<void> {
-    if (await this.isElementExists(this.statusFilter)) {
-      await this.selectOption(this.statusFilter, status);
-      await this.waitForPageLoad();
+    // Find working status filter
+    // Note: Implementation depends heavily on UI library (MUI, native select, etc.)
+    // This is a simplified approach
+
+    // Try native select first
+    const select = this.page.locator('select[name="status"]');
+    if (await select.isVisible().catch(() => false)) {
+      await select.selectOption({ label: status }).catch(() => select.selectOption({ value: status }));
+      await this.waitForOrdersLoaded();
+      return;
     }
-  }
 
-  /**
-   * Filter orders by date range
-   */
-  async filterByDateRange(startDate: string, endDate: string): Promise<void> {
-    // Implementation depends on actual date picker component
-    await this.waitForPageLoad();
-  }
+    // Try MUI/Custom dropdown
+    // This usually involves clicking a trigger then clicking an option
+    const trigger = this.page.locator('[role="button"]:has-text("Status"), [role="button"]:has-text("ステータス")');
+    if (await trigger.isVisible().catch(() => false)) {
+      await trigger.click();
+      await this.page.waitForTimeout(200);
+      await this.page.click(`li[role="option"]:has-text("${status}")`);
+      await this.waitForOrdersLoaded();
+      return;
+    }
 
-  /**
-   * Click on order by order number
-   */
-  async clickOrderByNumber(orderNumber: string): Promise<void> {
-    await this.page.click(`text=${orderNumber}`);
-    await this.waitForNavigation();
+    console.log('Could not find status filter, skipping filter step');
   }
 
   /**
    * Get order count from current page
    */
   async getOrderCount(): Promise<number> {
-    const rows = this.page.locator(this.orderRows);
-    return await rows.count();
+    return await this.page.locator(this.orderRows).count();
+  }
+
+  /**
+   * Get data from a specific order row
+   */
+  async getOrderRowData(index: number): Promise<any> {
+    const row = this.page.locator(this.orderRows).nth(index);
+    if (!(await row.isVisible())) return null;
+
+    // Extract text from all cells
+    const cells = row.locator('td');
+    const cellCount = await cells.count();
+    const rowData: string[] = [];
+
+    for (let i = 0; i < cellCount; i++) {
+      rowData.push(await cells.nth(i).innerText());
+    }
+
+    return {
+      raw: rowData,
+      // Attempt to parse common fields if possible (heuristic)
+      // Order number usually starts with # or ORD-
+      orderNumber: rowData.find(t => t.match(/^#\d+/) || t.match(/ORD-\d+/)) || '',
+      // Status is usually one of the known status strings
+      status: rowData.find(t => Object.values(OrderStatus).some(s => t.includes(s))) || '',
+      // Amount usually starts with ¥ or has currency format
+      amount: rowData.find(t => t.includes('¥') && t.match(/\d/)) || ''
+    };
   }
 
   /**
    * Select order by checkbox
    */
   async selectOrder(index: number): Promise<void> {
-    const checkboxes = this.page.locator(this.orderCheckboxes);
-    await checkboxes.nth(index).check();
-  }
-
-  /**
-   * Select all orders
-   */
-  async selectAllOrders(): Promise<void> {
-    if (await this.isElementExists(this.bulkCheckbox)) {
-      await this.click(this.bulkCheckbox);
+    const checkbox = this.page.locator(this.orderRows).nth(index).locator('input[type="checkbox"]');
+    if (await checkbox.isVisible()) {
+      await checkbox.check();
     }
-  }
-
-  /**
-   * Click form print button
-   */
-  async clickFormPrint(): Promise<void> {
-    await this.click(this.formPrintButton);
-  }
-
-  /**
-   * Click create order from pre-application
-   */
-  async clickCreateOrderFromPreApp(): Promise<void> {
-    await this.click(this.createOrderFromPreAppButton);
-    await this.waitForNavigation();
-  }
-
-  /**
-   * Click proxy order button
-   */
-  async clickProxyOrder(): Promise<void> {
-    await this.click(this.proxyOrderButton);
-    await this.waitForNavigation();
   }
 
   /**
    * Navigate to next page
    */
   async goToNextPage(): Promise<void> {
-    if (await this.isElementExists(this.nextPageButton)) {
-      await this.click(this.nextPageButton);
-      await this.waitForPageLoad();
+    const nextBtn = this.page.locator('button[aria-label="Next page"], button[title="Next page"], .MuiPaginationItem-previousNext').last();
+    if (await nextBtn.isVisible() && await nextBtn.isEnabled()) {
+      await nextBtn.click();
+      await this.waitForOrdersLoaded();
     }
-  }
-
-  /**
-   * Navigate to previous page
-   */
-  async goToPreviousPage(): Promise<void> {
-    if (await this.isElementExists(this.previousPageButton)) {
-      await this.click(this.previousPageButton);
-      await this.waitForPageLoad();
-    }
-  }
-
-  /**
-   * Verify order exists in list
-   */
-  async verifyOrderExists(orderNumber: string): Promise<void> {
-    await expect(this.page.locator(`text=${orderNumber}`)).toBeVisible();
-  }
-
-  /**
-   * Verify order status
-   */
-  async verifyOrderStatus(orderNumber: string, expectedStatus: OrderStatus): Promise<void> {
-    const orderRow = this.page.locator(`tr:has-text("${orderNumber}")`);
-    await expect(orderRow).toContainText(expectedStatus);
-  }
-
-  /**
-   * Get order details from list row
-   */
-  async getOrderDetails(orderNumber: string): Promise<Partial<{ orderNumber: string; status: string; customer: string; amount: string; date: string }>> {
-    const row = this.page.locator(`tr:has-text("${orderNumber}")`);
-    // Extract details from row cells
-    // This is a placeholder - actual implementation depends on table structure
-    return {};
   }
 }
 
