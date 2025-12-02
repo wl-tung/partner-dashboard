@@ -13,79 +13,61 @@ test.describe('API Request Verification', () => {
     dataHelper = new DataHelper();
   });
 
-  authTest('should make API call to login endpoint', async ({ page, loginPage: lp }) => {
+  authTest('should make API call to login endpoint with correct payload', async ({ page, loginPage: lp }) => {
     loginPage = lp;
     const users = dataHelper.getTestUsers();
     const user: User = users.storeOwner;
 
     await loginPage.goto();
+
+    // Setup request waiter BEFORE action
+    const requestPromise = page.waitForRequest(request =>
+      (request.url().includes('/auth/login') || request.url().includes('/api/login')) &&
+      request.method() === 'POST'
+    );
+
+    // Perform action
     await loginPage.login(user);
-    
-    const apiCall = await loginPage.verifyAPICall('/auth/login');
-    expect(apiCall.called).toBe(true);
+
+    // Wait for request
+    const request = await requestPromise;
+    expect(request).toBeTruthy();
+
+    // Verify Payload Schema
+    const postData = request.postDataJSON();
+    expect(postData).toEqual(expect.objectContaining({
+      employeeCode: expect.any(String), // Actual API uses employeeCode for email
+      password: expect.any(String),
+      storeCode: expect.any(String),
+      building: expect.any(String),     // Actual API uses building
+      location: expect.any(String),     // Actual API uses location
+      rememberMe: expect.any(Boolean)
+    }));
+
+    // Verify Specific Values
+    expect(postData.employeeCode).toBe(user.email);
+    expect(postData.storeCode).toBe(user.storeCode);
   });
 
-  authTest('should send correct request payload structure', async ({ page, loginPage: lp }) => {
+  authTest('should include correct headers', async ({ page, loginPage: lp }) => {
     loginPage = lp;
     const users = dataHelper.getTestUsers();
     const user: User = users.storeOwner;
 
-    let requestPayload: any = null;
-
-    page.on('request', request => {
-      if (request.url().includes('/auth/login') || request.url().includes('/api/login')) {
-        const postData = request.postData();
-        if (postData) {
-          try {
-            requestPayload = JSON.parse(postData);
-          } catch (e) {
-            requestPayload = postData;
-          }
-        }
-      }
-    });
-
     await loginPage.goto();
+
+    const requestPromise = page.waitForRequest(request =>
+      (request.url().includes('/auth/login') || request.url().includes('/api/login')) &&
+      request.method() === 'POST'
+    );
+
     await loginPage.login(user);
-    
-    await page.waitForTimeout(1000);
-    
-    // Verify payload structure (if available)
-    if (requestPayload) {
-      expect(requestPayload).toBeTruthy();
-    }
-  });
+    const request = await requestPromise;
 
-  authTest('should include location data in request', async ({ page, loginPage: lp }) => {
-    loginPage = lp;
-    const users = dataHelper.getTestUsers();
-    const user: User = users.storeOwner;
-
-    let requestPayload: any = null;
-
-    page.on('request', request => {
-      if (request.url().includes('/auth/login') || request.url().includes('/api/login')) {
-        const postData = request.postData();
-        if (postData) {
-          try {
-            requestPayload = JSON.parse(postData);
-          } catch (e) {
-            requestPayload = postData;
-          }
-        }
-      }
-    });
-
-    await loginPage.goto();
-    await loginPage.login(user);
-    
-    await page.waitForTimeout(1000);
-    
-    // Location data should be in request
-    if (requestPayload) {
-      const payloadStr = JSON.stringify(requestPayload);
-      expect(payloadStr).toContain(user.storeCode || 'TKY001');
-    }
+    // Verify Headers
+    const headers = request.headers();
+    expect(headers['content-type']).toContain('application/json');
+    // Add other expected headers here (e.g., specific auth headers if any)
   });
 
   authTest('should not include password in URL', async ({ page, loginPage: lp }) => {
@@ -95,32 +77,25 @@ test.describe('API Request Verification', () => {
 
     await loginPage.goto();
     await loginPage.login(user);
-    
+
     const url = page.url();
     expect(url).not.toContain(user.password);
   });
 
-  authTest('should use HTTPS for API calls', async ({ page, loginPage: lp }) => {
+  authTest('should use HTTPS', async ({ page, loginPage: lp }) => {
     loginPage = lp;
     const users = dataHelper.getTestUsers();
     const user: User = users.storeOwner;
 
-    let apiUrl = '';
-
-    page.on('request', request => {
-      if (request.url().includes('/auth/login') || request.url().includes('/api/login')) {
-        apiUrl = request.url();
-      }
-    });
-
     await loginPage.goto();
+
+    const requestPromise = page.waitForRequest(request =>
+      (request.url().includes('/auth/login') || request.url().includes('/api/login'))
+    );
+
     await loginPage.login(user);
-    
-    await page.waitForTimeout(1000);
-    
-    if (apiUrl) {
-      expect(apiUrl).toMatch(/^https:/);
-    }
+    const request = await requestPromise;
+
+    expect(request.url()).toMatch(/^https:/);
   });
 });
-

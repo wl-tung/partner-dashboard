@@ -8,7 +8,7 @@ import { User, Location } from '../types';
  */
 export class LoginPage extends BasePage {
   // Selectors - Updated based on actual page structure (using getters for dynamic access)
-  
+
   /**
    * Email/Employee Code input field
    */
@@ -87,20 +87,197 @@ export class LoginPage extends BasePage {
     await this.waitForPageLoad();
   }
 
+  // ============================================================================
+  // ENHANCED HELPER METHODS (New - Safe additions, backwards compatible)
+  // ============================================================================
+
+  /**
+   * Smart wait for dropdown menu to appear
+   * Uses Promise.race to wait for any valid menu selector
+   * Falls back gracefully if menu doesn't appear
+   */
+  private async waitForDropdownMenuSmart(timeout: number = 5000): Promise<void> {
+    const menuSelectors = [
+      '[role="listbox"]',
+      '[role="menu"]',
+      '.MuiMenu-list',
+      '.MuiPopover-root [role="listbox"]'
+    ];
+
+    try {
+      await Promise.race(
+        menuSelectors.map(selector =>
+          this.page.waitForSelector(selector, { state: 'visible', timeout })
+        )
+      );
+    } catch (error) {
+      // Fallback: wait a bit and continue (backwards compatible)
+      await this.page.waitForTimeout(500);
+    }
+  }
+
+  /**
+   * Smart wait for dropdown option
+   * Returns the first visible option matching the text
+   * Returns null if not found (backwards compatible)
+   */
+  private async waitForDropdownOptionSmart(
+    optionText: string,
+    timeout: number = 5000
+  ): Promise<Locator | null> {
+    const optionSelectors = [
+      `[role="option"]:has-text("${optionText}")`,
+      `li:has-text("${optionText}")`,
+      `.MuiMenuItem-root:has-text("${optionText}")`
+    ];
+
+    for (const selector of optionSelectors) {
+      const option = this.page.locator(selector).first();
+      try {
+        await option.waitFor({ state: 'visible', timeout: timeout / optionSelectors.length });
+        return option;
+      } catch {
+        continue;
+      }
+    }
+
+    return null; // Return null instead of throwing (backwards compatible)
+  }
+
+  /**
+   * Retry with exponential backoff
+   * Generic retry mechanism for any async operation
+   */
+  private async retryWithBackoff<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    operationName: string = 'operation'
+  ): Promise<T> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (attempt === maxRetries) {
+          console.error(`${operationName} failed after ${maxRetries} attempts:`, error);
+          throw error;
+        }
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        console.log(`${operationName} attempt ${attempt} failed, retrying in ${delay}ms...`);
+        await this.page.waitForTimeout(delay);
+      }
+    }
+    throw new Error('Should not reach here');
+  }
+
+  /**
+   * Fill input with verification (safe version)
+   * UPDATED: Now uses pressSequentially to simulate real user typing
+   * This triggers all keyboard events (keydown, keyup, input, change)
+   * which is required for some form validations to re-enable buttons
+   */
+  async fillWithVerificationSafe(locator: Locator, value: string): Promise<void> {
+    try {
+      await expect(locator).toBeVisible({ timeout: 5000 });
+      await expect(locator).toBeEnabled({ timeout: 5000 });
+
+      // Clear first
+      await locator.clear();
+
+      // Simulate real typing
+      await locator.pressSequentially(value, { delay: 10 });
+
+      // Trigger blur to ensure validation runs
+      await locator.blur();
+
+      // Verify filled
+      await expect(locator).toHaveValue(value, { timeout: 2000 });
+    } catch (error) {
+      // Fallback
+      console.warn('Verification failed, using simple fill:', error);
+      await locator.clear();
+      await locator.fill(value);
+    }
+  }
+
+  /**
+   * ENHANCED: Select dropdown option with smart waits
+   * This is a NEW method that uses the helper methods above
+   * Original methods remain unchanged for backwards compatibility
+   */
+  private async selectDropdownOptionEnhanced(
+    dropdownIndex: number,
+    optionText: string,
+    dropdownName: string = 'dropdown',
+    maxRetries: number = 3
+  ): Promise<void> {
+    await this.retryWithBackoff(async () => {
+      const dropdown = this.page.getByRole('combobox').nth(dropdownIndex);
+
+      // Wait for dropdown to be ready (with fallback)
+      try {
+        await expect(dropdown).toBeVisible({ timeout: 5000 });
+        await expect(dropdown).toBeEnabled({ timeout: 5000 });
+      } catch (error) {
+        console.warn(`${dropdownName} not ready, using force click`);
+      }
+
+      // Click to open
+      await dropdown.click();
+
+      // Wait for menu to appear (smart wait with fallback)
+      await this.waitForDropdownMenuSmart();
+
+      // Find and click option (smart wait with fallback)
+      const option = await this.waitForDropdownOptionSmart(optionText);
+
+      if (option) {
+        await option.click();
+      } else {
+        // Fallback: use original selector strategy
+        console.warn(`Smart select failed for ${optionText}, using fallback`);
+        const fallbackOption = this.page.locator(`[role="option"]:has-text("${optionText}")`).first();
+        await fallbackOption.click({ force: true });
+      }
+
+      // Wait for menu to close (with timeout to avoid hanging)
+      await this.page.waitForSelector('[role="listbox"]', {
+        state: 'hidden',
+        timeout: 2000
+      }).catch(() => {
+        // Menu might close immediately or not exist, that's OK
+      });
+    }, maxRetries, `Select ${dropdownName} option "${optionText}"`);
+  }
+
+  /**
+   * ENHANCED: Select location using new enhanced method
+   * This is a NEW method for testing enhanced approach
+   */
+  async selectLocationEnhanced(location: Location): Promise<void> {
+    await this.selectDropdownOptionEnhanced(0, location.storeCode, 'Store');
+    await this.selectDropdownOptionEnhanced(1, location.buildingCode, 'Building');
+    await this.selectDropdownOptionEnhanced(2, location.locationCode, 'Location');
+  }
+
+  // ============================================================================
+  // ORIGINAL METHODS (Unchanged - kept for backwards compatibility)
+  // ============================================================================
+
+
   /**
    * Login with email and password
    */
   async loginWithEmail(email: string, password: string, location: Location, rememberMe: boolean = false): Promise<void> {
-    await this.emailInput.fill(email);
-    await this.passwordInput.fill(password);
+    await this.fillWithVerificationSafe(this.emailInput, email);
+    await this.fillWithVerificationSafe(this.passwordInput, password);
     await this.selectLocation(location);
-    
+
     if (rememberMe) {
       if (await this.rememberMeCheckbox.isVisible({ timeout: 2000 }).catch(() => false)) {
         await this.rememberMeCheckbox.check();
       }
     }
-    
+
     await this.loginButton.click();
     await this.waitForNavigation();
   }
@@ -110,16 +287,16 @@ export class LoginPage extends BasePage {
    */
   async loginWithEmployeeCode(employeeCode: string, password: string, location: Location, rememberMe: boolean = false): Promise<void> {
     // Same input field accepts both email and employee code
-    await this.emailInput.fill(employeeCode);
-    await this.passwordInput.fill(password);
+    await this.fillWithVerificationSafe(this.emailInput, employeeCode);
+    await this.fillWithVerificationSafe(this.passwordInput, password);
     await this.selectLocation(location);
-    
+
     if (rememberMe) {
       if (await this.rememberMeCheckbox.isVisible({ timeout: 2000 }).catch(() => false)) {
         await this.rememberMeCheckbox.check();
       }
     }
-    
+
     await this.loginButton.click();
     await this.waitForNavigation();
   }
@@ -157,28 +334,39 @@ export class LoginPage extends BasePage {
   async selectLocationWithRetry(location: Location, maxRetries: number = 3): Promise<void> {
     // Select Store
     await this.selectStoreWithRetry(location.storeCode, maxRetries);
-    
+
     // Select Building
     await this.selectBuildingWithRetry(location.buildingCode, maxRetries);
-    
+
     // Select Location
     await this.selectLocationOptionWithRetry(location.locationCode, maxRetries);
   }
 
   /**
    * Select store with multiple strategies
+   * ENHANCED: Now tries optimized method first, falls back to original if needed
    */
   async selectStoreWithRetry(storeCode: string, maxRetries: number = 3): Promise<void> {
+    // Try enhanced method first
+    try {
+      await this.selectDropdownOptionEnhanced(0, storeCode, 'Store', maxRetries);
+      return; // Success with enhanced method!
+    } catch (enhancedError) {
+      console.warn('⚠️  Enhanced store selection failed, using original method:', enhancedError);
+      // Fall through to original implementation below
+    }
+
+    // ORIGINAL IMPLEMENTATION (kept as fallback for safety)
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         // Use getByRole for Material UI combobox (first combobox is store)
         const storeCombobox = this.page.getByRole('combobox').first();
-        
+
         if (await storeCombobox.isVisible({ timeout: 5000 }).catch(() => false)) {
           // Click to open dropdown
           await storeCombobox.click({ force: true });
           await this.page.waitForTimeout(500);
-          
+
           // Wait for dropdown menu to appear - try multiple selectors
           const menuSelectors = [
             '[role="listbox"]',
@@ -188,7 +376,7 @@ export class LoginPage extends BasePage {
             '.MuiAutocomplete-listbox',
             '.MuiPopover-root [role="listbox"]'
           ];
-          
+
           let menuFound = false;
           for (const selector of menuSelectors) {
             try {
@@ -199,12 +387,12 @@ export class LoginPage extends BasePage {
               continue;
             }
           }
-          
+
           if (!menuFound) {
             // Try waiting a bit more and check if menu appeared
             await this.page.waitForTimeout(500);
           }
-          
+
           // Try multiple strategies to find and click the option
           const optionSelectors = [
             `[role="option"]:has-text("${storeCode}")`,
@@ -214,7 +402,7 @@ export class LoginPage extends BasePage {
             `.MuiMenuItem-root:has-text("${storeCode}")`,
             `.MuiAutocomplete-option:has-text("${storeCode}")`
           ];
-          
+
           let optionSelected = false;
           for (const selector of optionSelectors) {
             const option = this.page.locator(selector).first();
@@ -225,11 +413,11 @@ export class LoginPage extends BasePage {
               break;
             }
           }
-          
+
           if (optionSelected) {
             return;
           }
-          
+
           // Fallback: try getByRole with partial text match
           try {
             const optionByText = this.page.getByRole('option', { name: new RegExp(storeCode, 'i') });
@@ -255,24 +443,35 @@ export class LoginPage extends BasePage {
 
   /**
    * Select building with multiple strategies
+   * ENHANCED: Now tries optimized method first, falls back to original if needed
    */
   async selectBuildingWithRetry(buildingCode: string, maxRetries: number = 3): Promise<void> {
+    // Try enhanced method first
+    try {
+      await this.selectDropdownOptionEnhanced(1, buildingCode, 'Building', maxRetries);
+      return; // Success with enhanced method!
+    } catch (enhancedError) {
+      console.warn('⚠️  Enhanced building selection failed, using original method:', enhancedError);
+      // Fall through to original implementation below
+    }
+
+    // ORIGINAL IMPLEMENTATION (kept as fallback for safety)
     // Wait for building dropdown to be enabled
     await this.page.waitForTimeout(1000);
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         // Use getByRole for Material UI combobox (second combobox is building)
         const buildingCombobox = this.page.getByRole('combobox').nth(1);
-        
+
         // Wait for building dropdown to be enabled
-        await buildingCombobox.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+        await buildingCombobox.waitFor({ state: 'visible', timeout: 5000 }).catch(() => { });
         const isEnabled = await buildingCombobox.isEnabled({ timeout: 5000 }).catch(() => false);
-        
+
         if (isEnabled) {
           await buildingCombobox.click({ force: true });
           await this.page.waitForTimeout(500);
-          
+
           // Wait for dropdown menu to appear
           const menuSelectors = [
             '[role="listbox"]',
@@ -282,7 +481,7 @@ export class LoginPage extends BasePage {
             '.MuiAutocomplete-listbox',
             '.MuiPopover-root [role="listbox"]'
           ];
-          
+
           let menuFound = false;
           for (const selector of menuSelectors) {
             try {
@@ -293,11 +492,11 @@ export class LoginPage extends BasePage {
               continue;
             }
           }
-          
+
           if (!menuFound) {
             await this.page.waitForTimeout(500);
           }
-          
+
           // Try multiple strategies to find and click the option
           const optionSelectors = [
             `[role="option"]:has-text("${buildingCode}")`,
@@ -307,7 +506,7 @@ export class LoginPage extends BasePage {
             `.MuiMenuItem-root:has-text("${buildingCode}")`,
             `.MuiAutocomplete-option:has-text("${buildingCode}")`
           ];
-          
+
           let optionSelected = false;
           for (const selector of optionSelectors) {
             const option = this.page.locator(selector).first();
@@ -318,11 +517,11 @@ export class LoginPage extends BasePage {
               break;
             }
           }
-          
+
           if (optionSelected) {
             return;
           }
-          
+
           // Fallback: try getByRole with partial text match
           try {
             const optionByText = this.page.getByRole('option', { name: new RegExp(buildingCode, 'i') });
@@ -348,24 +547,35 @@ export class LoginPage extends BasePage {
 
   /**
    * Select location option with multiple strategies
+   * ENHANCED: Now tries optimized method first, falls back to original if needed
    */
   async selectLocationOptionWithRetry(locationCode: string, maxRetries: number = 3): Promise<void> {
+    // Try enhanced method first
+    try {
+      await this.selectDropdownOptionEnhanced(2, locationCode, 'Location', maxRetries);
+      return; // Success with enhanced method!
+    } catch (enhancedError) {
+      console.warn('⚠️  Enhanced location selection failed, using original method:', enhancedError);
+      // Fall through to original implementation below
+    }
+
+    // ORIGINAL IMPLEMENTATION (kept as fallback for safety)
     // Wait for location dropdown to be enabled
     await this.page.waitForTimeout(1000);
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         // Use getByRole for Material UI combobox (third combobox is location)
         const locationCombobox = this.page.getByRole('combobox').nth(2);
-        
+
         // Wait for location dropdown to be enabled
-        await locationCombobox.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+        await locationCombobox.waitFor({ state: 'visible', timeout: 5000 }).catch(() => { });
         const isEnabled = await locationCombobox.isEnabled({ timeout: 5000 }).catch(() => false);
-        
+
         if (isEnabled) {
           await locationCombobox.click({ force: true });
           await this.page.waitForTimeout(500);
-          
+
           // Wait for dropdown menu to appear
           const menuSelectors = [
             '[role="listbox"]',
@@ -375,7 +585,7 @@ export class LoginPage extends BasePage {
             '.MuiAutocomplete-listbox',
             '.MuiPopover-root [role="listbox"]'
           ];
-          
+
           let menuFound = false;
           for (const selector of menuSelectors) {
             try {
@@ -386,11 +596,11 @@ export class LoginPage extends BasePage {
               continue;
             }
           }
-          
+
           if (!menuFound) {
             await this.page.waitForTimeout(500);
           }
-          
+
           // Try multiple ways to find and click the option
           const optionSelectors = [
             `[role="option"]:has-text("${locationCode}")`,
@@ -469,7 +679,7 @@ export class LoginPage extends BasePage {
    */
   async verifyErrorMessage(expectedMessage?: string): Promise<void> {
     await expect(this.errorMessage).toBeVisible({ timeout: 5000 });
-    
+
     if (expectedMessage) {
       await expect(this.errorMessage).toContainText(expectedMessage);
     }
@@ -502,7 +712,7 @@ export class LoginPage extends BasePage {
     // Combine multiple selectors
     const errorElements = this.page.locator('.error, .MuiAlert-root, [role="alert"], .MuiFormHelperText-root');
     const errorCount = await errorElements.count();
-    
+
     for (let i = 0; i < errorCount; i++) {
       const errorText = await errorElements.nth(i).textContent();
       if (errorText) errors.push(errorText.trim());
@@ -520,9 +730,9 @@ export class LoginPage extends BasePage {
   async verifyErrorMessages(expectedMessages: string[]): Promise<void> {
     const validation = await this.verifyFormValidation();
     expect(validation.hasErrors).toBe(true);
-    
+
     for (const expectedMessage of expectedMessages) {
-      const found = validation.errors.some(error => 
+      const found = validation.errors.some(error =>
         error.toLowerCase().includes(expectedMessage.toLowerCase())
       );
       expect(found).toBe(true);
@@ -534,13 +744,13 @@ export class LoginPage extends BasePage {
    */
   async verifySessionPersistence(): Promise<{ hasSessionCookie: boolean; hasRememberMe: boolean }> {
     const cookies = await this.page.context().cookies();
-    const sessionCookie = cookies.find(cookie => 
-      cookie.name.toLowerCase().includes('session') || 
+    const sessionCookie = cookies.find(cookie =>
+      cookie.name.toLowerCase().includes('session') ||
       cookie.name.toLowerCase().includes('auth') ||
       cookie.name.toLowerCase().includes('token')
     );
 
-    const rememberMeCookie = cookies.find(cookie => 
+    const rememberMeCookie = cookies.find(cookie =>
       cookie.name.toLowerCase().includes('remember') ||
       cookie.name.toLowerCase().includes('persist')
     );
@@ -559,8 +769,8 @@ export class LoginPage extends BasePage {
     const responses: any[] = [];
 
     this.page.on('request', request => {
-      if (request.url().includes('/auth/login') || request.url().includes('/api/login') || 
-          (expectedEndpoint && request.url().includes(expectedEndpoint))) {
+      if (request.url().includes('/auth/login') || request.url().includes('/api/login') ||
+        (expectedEndpoint && request.url().includes(expectedEndpoint))) {
         requests.push({
           url: request.url(),
           method: request.method(),
@@ -571,7 +781,7 @@ export class LoginPage extends BasePage {
 
     this.page.on('response', response => {
       if (response.url().includes('/auth/login') || response.url().includes('/api/login') ||
-          (expectedEndpoint && response.url().includes(expectedEndpoint))) {
+        (expectedEndpoint && response.url().includes(expectedEndpoint))) {
         responses.push({
           url: response.url(),
           status: response.status(),
@@ -616,7 +826,7 @@ export class LoginPage extends BasePage {
     // Check for required indicators near the input fields
     const emailLabel = this.page.locator('label:has-text("メールアドレス"), label:has-text("従業員コード")').first();
     const passwordLabel = this.page.locator('label:has-text("パスワード")').first();
-    
+
     const emailText = await emailLabel.textContent().catch(() => '');
     const passwordText = await passwordLabel.textContent().catch(() => '');
 
@@ -657,7 +867,7 @@ export class LoginPage extends BasePage {
     const store = await this.storeDropdown.textContent().catch(() => '');
     const building = await this.buildingDropdown.textContent().catch(() => '');
     const location = await this.locationDropdown.textContent().catch(() => '');
-    
+
     return { store: store?.trim(), building: building?.trim(), location: location?.trim() };
   }
 

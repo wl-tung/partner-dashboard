@@ -84,43 +84,36 @@ test.describe('Failed Login Scenarios', () => {
     await expect(page).toHaveURL(/.*\/auth\/login/);
   });
 
-  test('should handle multiple failed login attempts', async ({ page }) => {
+  // FIXED: Now uses enhanced fill method that triggers form validation events
+  // This allows the login button to re-enable between attempts
+  test('should handle multiple failed login attempts', async ({ page, loginPage: lp }) => {
+    loginPage = lp;
+
     await loginPage.goto();
-    
+
+    const location = {
+      storeCode: 'TKY001',
+      buildingCode: 'TKY001-A',
+      locationCode: 'TKY001-A-1B'
+    };
+
     // Attempt 1
-    await loginPage.loginWithEmail(
-      'test@example.com',
-      'wrong1',
-      {
-        storeCode: 'TKY001',
-        buildingCode: 'TKY001-A',
-        locationCode: 'TKY001-A-1B'
-      }
-    );
+    await loginPage.fillWithVerificationSafe(loginPage.emailInput, 'test@example.com');
+    await loginPage.fillWithVerificationSafe(loginPage.passwordInput, 'wrong1');
+    await loginPage.selectLocationEnhanced(location);
+    await loginPage.loginButton.click();
     await loginPage.verifyErrorMessage();
 
-    // Attempt 2
-    await loginPage.loginWithEmail(
-      'test@example.com',
-      'wrong2',
-      {
-        storeCode: 'TKY001',
-        buildingCode: 'TKY001-A',
-        locationCode: 'TKY001-A-1B'
-      }
-    );
+    // Attempt 2 - form validation will re-enable button when we fill with events
+    await loginPage.fillWithVerificationSafe(loginPage.emailInput, 'test@example.com');
+    await loginPage.fillWithVerificationSafe(loginPage.passwordInput, 'wrong2');
+    await loginPage.loginButton.click();
     await loginPage.verifyErrorMessage();
 
     // Attempt 3
-    await loginPage.loginWithEmail(
-      'test@example.com',
-      'wrong3',
-      {
-        storeCode: 'TKY001',
-        buildingCode: 'TKY001-A',
-        locationCode: 'TKY001-A-1B'
-      }
-    );
+    await loginPage.fillWithVerificationSafe(loginPage.emailInput, 'test@example.com');
+    await loginPage.fillWithVerificationSafe(loginPage.passwordInput, 'wrong3');
+    await loginPage.loginButton.click();
     await loginPage.verifyErrorMessage();
 
     // Verify still on login page
