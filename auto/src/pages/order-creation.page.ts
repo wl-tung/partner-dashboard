@@ -133,16 +133,16 @@ export class OrderCreationPage extends BasePage {
         // Wait for modal to be fully loaded
         await this.page.waitForTimeout(1000);
 
-        // Customers are displayed as div blocks within a scrollable container
-        // Selector discovered by browser subagent: div.MuiBox-root > div
+        // Customers are displayed as MuiCard components
+        // Actual DOM: <div class="MuiCard-root mui-zbpjio">
         const modal = this.page.locator('[role="dialog"]');
-        const customerBlocks = modal.locator('div.MuiBox-root > div, .mui-qmuoz0 > div');
+        const customerCards = modal.locator('.MuiCard-root.mui-zbpjio, .MuiCard-root');
 
-        const count = await customerBlocks.count();
-        console.log(`Found ${count} customer blocks in modal`);
+        const count = await customerCards.count();
+        console.log(`Found ${count} customer cards in modal`);
 
         if (count > index) {
-            await customerBlocks.nth(index).click();
+            await customerCards.nth(index).click();
             await this.waitForModalClose();
         } else {
             throw new Error(`Customer index ${index} out of range (found ${count} customers)`);
@@ -153,22 +153,39 @@ export class OrderCreationPage extends BasePage {
    * Get selected customer information from form
    */
     async getSelectedCustomerInfo(): Promise<CustomerInfo> {
-        // Wait a bit for form to populate
-        await this.page.waitForTimeout(1000);
+        // Wait for form to populate
+        await this.page.waitForTimeout(1500);
 
-        // Simplified approach: just get any visible text from the order info section
-        // This is a workaround since the exact selectors are hard to determine
-        const orderInfoSection = this.page.locator('[role="tabpanel"]').first();
-        const allText = await orderInfoSection.innerText().catch(() => '');
+        // Simpler approach: find the label, then get the next p tag
+        // DOM: <span>注文者氏名</span> followed by <p>藤田 和也</p>
 
-        console.log('Order info section text:', allText.substring(0, 200));
+        const name = await this.page
+            .getByText('注文者氏名', { exact: true })
+            .locator('xpath=following-sibling::p')
+            .first()
+            .innerText()
+            .catch(() => '');
 
-        // For now, just return placeholder values
-        // The important thing is that the customer selection modal worked
+        const email = await this.page
+            .getByText('メールアドレス', { exact: true })
+            .locator('xpath=following-sibling::p')
+            .first()
+            .innerText()
+            .catch(() => '');
+
+        const phone = await this.page
+            .getByText('注文者電話番号', { exact: true })
+            .locator('xpath=following-sibling::p')
+            .first()
+            .innerText()
+            .catch(() => '');
+
+        console.log('Extracted customer info - Name:', name, 'Email:', email, 'Phone:', phone);
+
         return {
-            name: allText.includes('非会員') || allText.length > 100 ? 'Customer Selected' : '',
-            email: '',
-            phone: ''
+            name,
+            email,
+            phone
         };
     }
 

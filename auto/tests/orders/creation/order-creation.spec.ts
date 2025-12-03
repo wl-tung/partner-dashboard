@@ -34,7 +34,7 @@ test.describe('Order Creation - Happy Path', () => {
         await expect(paymentInfoTab).toBeVisible();
     });
 
-    authTest.skip('should select customer successfully', async ({ authenticatedPage, page }) => {
+    authTest('should select customer successfully', async ({ authenticatedPage, page }) => {
         orderCreationPage = new OrderCreationPage(page);
 
         await orderCreationPage.goto();
