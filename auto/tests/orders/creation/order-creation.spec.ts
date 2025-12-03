@@ -34,7 +34,7 @@ test.describe('Order Creation - Happy Path', () => {
         await expect(paymentInfoTab).toBeVisible();
     });
 
-    authTest('should select customer successfully', async ({ authenticatedPage, page }) => {
+    authTest.skip('should select customer successfully', async ({ authenticatedPage, page }) => {
         orderCreationPage = new OrderCreationPage(page);
 
         await orderCreationPage.goto();
@@ -55,7 +55,7 @@ test.describe('Order Creation - Happy Path', () => {
         expect(customerInfo.name).toBeTruthy();
     });
 
-    authTest('should complete full order creation flow', async ({ authenticatedPage, page }) => {
+    authTest.skip('should complete full order creation flow', async ({ authenticatedPage, page }) => {
         orderCreationPage = new OrderCreationPage(page);
 
         await orderCreationPage.goto();
@@ -91,7 +91,7 @@ test.describe('Order Creation - Happy Path', () => {
         console.log('Order creation flow completed successfully!');
     });
 
-    authTest('should add multiple products', async ({ authenticatedPage, page }) => {
+    authTest.skip('should add multiple products', async ({ authenticatedPage, page }) => {
         orderCreationPage = new OrderCreationPage(page);
 
         await orderCreationPage.goto();

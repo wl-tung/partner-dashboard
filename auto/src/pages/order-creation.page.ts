@@ -150,13 +150,14 @@ export class OrderCreationPage extends BasePage {
     }
 
     /**
-     * Get selected customer information from form
-     */
+   * Get selected customer information from form
+   */
     async getSelectedCustomerInfo(): Promise<CustomerInfo> {
-        // Extract customer info from the populated form fields
-        const name = await this.extractFieldValue('氏名', 'Name', 'お名前');
-        const email = await this.extractFieldValue('メール', 'Email', 'E-mail');
-        const phone = await this.extractFieldValue('電話', 'Phone', 'Tel');
+        // Customer info is displayed as label/value pairs
+        // Selectors discovered by browser subagent
+        const name = await this.page.locator('//div[text()="注文者氏名"]/following-sibling::div').first().innerText().catch(() => '');
+        const email = await this.page.locator('//div[text()="メールアドレス"]/following-sibling::div').first().innerText().catch(() => '');
+        const phone = await this.page.locator('//div[text()="注文者電話番号"]/following-sibling::div').first().innerText().catch(() => '');
 
         return {
             name,
@@ -177,13 +178,25 @@ export class OrderCreationPage extends BasePage {
     }
 
     /**
-     * Add product from modal by index
-     */
+   * Add product from modal by index
+   */
     async addProduct(index: number = 0): Promise<void> {
-        // Find "追加" (Add) buttons in the modal
-        const addButtons = this.page.locator('[role="dialog"] button').filter({ hasText: /追加|Add/i });
-        await addButtons.nth(index).click();
-        await this.page.waitForTimeout(500);
+        // Product blocks use same structure as customer blocks
+        const modal = this.page.locator('[role="dialog"]');
+        const productBlocks = modal.locator('div.MuiBox-root.mui-qmuoz0 > div, div.MuiBox-root > div');
+
+        const count = await productBlocks.count();
+        console.log(`Found ${count} product blocks in modal`);
+
+        if (count > index) {
+            // Find the "追加" (Add) button within the product block
+            const productBlock = productBlocks.nth(index);
+            const addButton = productBlock.locator('button').filter({ hasText: /追加|Add/i });
+            await addButton.click();
+            await this.page.waitForTimeout(500);
+        } else {
+            throw new Error(`Product index ${index} out of range (found ${count} products)`);
+        }
     }
 
     /**
