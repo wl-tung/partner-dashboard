@@ -1,5 +1,9 @@
 import { Page, expect, Locator } from '@playwright/test';
 import { BasePage } from './base.page';
+import { ModalHelper, ProductSelectionHelper, AddressFormHelper } from '../helpers';
+import { WaitUtils } from '../utils/wait.utils';
+import { TestLogger } from '../utils/logger';
+import { OrderCreationConfig } from '../config/order-creation.config';
 
 /**
  * Customer information interface
@@ -34,12 +38,18 @@ export interface Address {
 /**
  * Order Creation Page Object
  * Handles the 3-tab order creation flow with modal interactions
- * ENHANCED: Uses flexible selectors and smart waits for complex form
+ * REFACTORED: Uses helper classes for modular, reusable code
  */
 export class OrderCreationPage extends BasePage {
+    private modalHelper: ModalHelper;
+    private productHelper: ProductSelectionHelper;
+    private addressHelper: AddressFormHelper;
 
     constructor(page: Page) {
         super(page);
+        this.modalHelper = new ModalHelper(page);
+        this.productHelper = new ProductSelectionHelper(page);
+        this.addressHelper = new AddressFormHelper(page);
     }
 
     /**
@@ -198,175 +208,31 @@ export class OrderCreationPage extends BasePage {
         const selectProductBtn = this.page.locator('button').filter({ hasText: '商品を選択' }).first();
 
         if (await selectProductBtn.count() > 0 && await selectProductBtn.isVisible()) {
-            console.log('Found "Select Product" (商品を選択) button. Clicking it...');
+            TestLogger.log('Found "Select Product" (商品を選択) button. Clicking it...');
             await selectProductBtn.click();
         } else {
-            console.log('"Select Product" button not found or not visible.');
-            console.log('Falling back to "Add Product" (商品を追加) button...');
+            TestLogger.log('"Select Product" button not found or not visible.');
+            TestLogger.log('Falling back to "Add Product" (商品を追加) button...');
             const button = this.page.getByRole('button', { name: '商品を追加' });
             await button.click();
         }
-        await this.waitForModalOpen();
+        await this.modalHelper.waitForModalOpen(OrderCreationConfig.timeouts.modal);
     }
 
     /**
    * Add product from modal by index
+   * Uses ProductSelectionHelper to handle both Quick Add and detailed selection flows
    */
     async addProduct(index: number = 0, quantity: number = 1): Promise<void> {
-        // Wait for modal to be fully loaded
-        await this.page.waitForTimeout(1000);
-
-        // Products use card structure
-        const modal = this.page.locator('[role="dialog"]');
-        const productCards = modal.locator('.MuiCard-root');
-
-        const count = await productCards.count();
-        console.log(`Found ${count} product cards in modal`);
-
-        if (count > index) {
-            const card = productCards.nth(index);
-
-            // Set quantity if needed (default is 1)
-            if (quantity !== 1) {
-                const quantityInput = card.locator('input[type="number"]');
-                if (await quantityInput.count() > 0) {
-                    await quantityInput.fill(quantity.toString());
-                    await this.page.waitForTimeout(200);
-                }
-            }
-
-            // Find the right modal - use the last one as it's likely the top-most
-            const modals = this.page.locator('[role="dialog"]');
-            const modalCount = await modals.count();
-            console.log(`Found ${modalCount} modals`);
-            const modal = modals.last();
-
-            // Debug: Print modal title
-            const title = await modal.locator('h2').first().innerText();
-            console.log(`Top-most modal title: "${title}"`);
-
-            // Debug: Print all buttons in the modal to see what we have
-            const allButtons = modal.locator('button');
-            const btnCount = await allButtons.count();
-            console.log(`Found ${btnCount} buttons in the top-most modal:`);
-            for (let i = 0; i < btnCount; i++) {
-                const text = await allButtons.nth(i).innerText();
-                console.log(`- Button ${i}: "${text}"`);
-            }
-
-            // Find the confirmation button using regex
-            const confirmButton = modal.locator('button').filter({ hasText: /商品を追加|Add/ }).first();
-
-            // NEW LOGIC: Check for "追加" (Add) buttons on cards (Alternative UI state)
-            const addButtons = modal.locator('button').filter({ hasText: /^追加$/ }); // Exact match to avoid partials if needed
-            const addButtonCount = await addButtons.count();
-
-            if (addButtonCount > 0 && await confirmButton.count() === 0) {
-                console.log(`Detected ${addButtonCount} "Add" (追加) buttons on cards. This is the 'Quick Add' UI.`);
-
-                // Click the first Add button
-                console.log('Clicking the first "Add" button...');
-                await addButtons.first().click();
-                await this.page.waitForTimeout(1000);
-
-                // Check if modal is still open
-                if (await modal.isVisible()) {
-                    console.log('Modal still open. Looking for "Close" (閉じる) button...');
-                    const closeButton = modal.locator('button').filter({ hasText: '閉じる' }).first();
-                    if (await closeButton.count() > 0) {
-                        console.log('Clicking "Close" button...');
-                        await closeButton.click();
-                    } else {
-                        console.log('No "Close" button found. Assuming modal closes automatically or we need to click outside.');
-                        // Optional: Click backdrop if needed
-                    }
-                }
-                return; // Done with this flow
-            }
-
-            // Verify button exists (Standard UI)
-            if (await confirmButton.count() === 0) {
-                console.log('CRITICAL: "Add Product" button not found in modal!');
-                const modalHtml = await modal.evaluate(el => el.outerHTML);
-                console.log(`Modal HTML (first 500 chars): ${modalHtml.substring(0, 500)}...`);
-                throw new Error('"Add Product" button not found');
-            }
-
-            // Try to enable it
-            let isEnabled = await confirmButton.isEnabled();
-            let attempts = 0;
-            const maxAttempts = 5;
-
-            while (!isEnabled && attempts < maxAttempts) {
-                console.log(`Attempt ${attempts + 1}/${maxAttempts} to enable "Add Product" button...`);
-
-                // Strategy 1: Click "Select" button
-                const selectButton = card.locator('button').filter({ hasText: '選択' }).first();
-                if (await selectButton.count() > 0) {
-                    console.log('Clicking "Select" button...');
-                    await selectButton.click({ force: true });
-                }
-
-                await this.page.waitForTimeout(1000);
-                isEnabled = await confirmButton.isEnabled();
-                if (isEnabled) break;
-
-                // Strategy 2: Click Image
-                const image = card.locator('img').first();
-                if (await image.count() > 0) {
-                    console.log('Clicking Product Image...');
-                    await image.click({ force: true });
-                }
-
-                await this.page.waitForTimeout(1000);
-                isEnabled = await confirmButton.isEnabled();
-                if (isEnabled) break;
-
-                // Strategy 3: Click Card Body (top left)
-                console.log('Clicking Card Body...');
-                await card.click({ force: true, position: { x: 20, y: 20 } });
-
-                await this.page.waitForTimeout(1000);
-                isEnabled = await confirmButton.isEnabled();
-
-                attempts++;
-            }
-
-            if (isEnabled) {
-                console.log('"Add Product" button is enabled. Clicking it...');
-                await confirmButton.click();
-            } else {
-                console.log('CRITICAL: "Add Product" button is still disabled after all attempts!');
-                await this.page.screenshot({ path: 'product_selection_failed.png' });
-                throw new Error('Could not enable "Add Product" button');
-            }
-
-            await this.page.waitForTimeout(1000);
-        } else {
-            throw new Error(`Product index ${index} out of range (found ${count} products)`);
-        }
+        await this.productHelper.selectProduct(index, quantity);
     }
 
     /**
      * Close product selection modal
      */
     async closeProductModal(): Promise<void> {
-        // Try multiple strategies to close the modal
-        const strategies = [
-            () => this.page.getByRole('button', { name: /閉じる|Close/i }).click(),
-            () => this.page.locator('[role="dialog"] button[aria-label*="close"]').click(),
-            () => this.page.keyboard.press('Escape')
-        ];
-
-        for (const strategy of strategies) {
-            try {
-                await strategy();
-                await this.waitForModalClose();
-                return;
-            } catch (e) {
-                continue;
-            }
-        }
+        const modal = this.page.locator('[role="dialog"]').last();
+        await this.modalHelper.closeModal(modal);
     }
 
     /**

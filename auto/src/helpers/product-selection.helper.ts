@@ -20,6 +20,10 @@ export class ProductSelectionHelper {
      */
     async selectProduct(index: number = 0, quantity: number = 1): Promise<void> {
         const modal = await this.modalHelper.waitForModalOpen();
+
+        // Wait for modal content to fully load
+        await this.page.waitForTimeout(1000);
+
         const modalType = await this.detectModalType(modal);
 
         console.log(`Detected modal type: ${modalType}`);
@@ -84,17 +88,24 @@ export class ProductSelectionHelper {
     ): Promise<void> {
         console.log('Using Detailed Selection flow...');
 
-        const productCards = modal.locator('.MuiCard-root');
-        const count = await productCards.count();
+        // Find product cards by looking for "選択" buttons (each card has one)
+        const selectButtons = modal.locator('button').filter({ hasText: '選択' });
+        const count = await selectButtons.count();
+
+        console.log(`Found ${count} products with Select buttons`);
 
         if (count <= index) {
             throw new Error(`Product index ${index} out of range (found ${count} products)`);
         }
 
-        const card = productCards.nth(index);
+        // Get the specific select button for this product
+        const selectButton = selectButtons.nth(index);
+
+        // Find the card containing this button (for quantity input)
+        const card = selectButton.locator('xpath=ancestor::div[contains(@class, "MuiCard-root") or contains(@class, "card")]').first();
 
         // Set quantity if needed
-        if (quantity !== 1) {
+        if (quantity !== 1 && await card.count() > 0) {
             const quantityInput = card.locator('input[type="number"]');
             if (await quantityInput.count() > 0) {
                 await quantityInput.fill(quantity.toString());
@@ -102,8 +113,9 @@ export class ProductSelectionHelper {
             }
         }
 
-        // Click "選択" button on card
-        await this.clickSelectButton(card);
+        // Click "選択" button
+        await selectButton.click({ force: true });
+        await this.page.waitForTimeout(500);
 
         // Click "商品を追加" confirmation button
         await this.clickConfirmButton(modal);
