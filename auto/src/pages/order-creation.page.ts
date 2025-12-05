@@ -195,28 +195,153 @@ export class OrderCreationPage extends BasePage {
      * Open product selection modal
      */
     async openProductSelectionModal(): Promise<void> {
-        const button = this.page.getByRole('button', { name: /商品を追加|Add.*Product/i });
-        await button.click();
+        const selectProductBtn = this.page.locator('button').filter({ hasText: '商品を選択' }).first();
+
+        if (await selectProductBtn.count() > 0 && await selectProductBtn.isVisible()) {
+            console.log('Found "Select Product" (商品を選択) button. Clicking it...');
+            await selectProductBtn.click();
+        } else {
+            console.log('"Select Product" button not found or not visible.');
+            console.log('Falling back to "Add Product" (商品を追加) button...');
+            const button = this.page.getByRole('button', { name: '商品を追加' });
+            await button.click();
+        }
         await this.waitForModalOpen();
     }
 
     /**
    * Add product from modal by index
    */
-    async addProduct(index: number = 0): Promise<void> {
-        // Product blocks use same structure as customer blocks
-        const modal = this.page.locator('[role="dialog"]');
-        const productBlocks = modal.locator('div.MuiBox-root.mui-qmuoz0 > div, div.MuiBox-root > div');
+    async addProduct(index: number = 0, quantity: number = 1): Promise<void> {
+        // Wait for modal to be fully loaded
+        await this.page.waitForTimeout(1000);
 
-        const count = await productBlocks.count();
-        console.log(`Found ${count} product blocks in modal`);
+        // Products use card structure
+        const modal = this.page.locator('[role="dialog"]');
+        const productCards = modal.locator('.MuiCard-root');
+
+        const count = await productCards.count();
+        console.log(`Found ${count} product cards in modal`);
 
         if (count > index) {
-            // Find the "追加" (Add) button within the product block
-            const productBlock = productBlocks.nth(index);
-            const addButton = productBlock.locator('button').filter({ hasText: /追加|Add/i });
-            await addButton.click();
-            await this.page.waitForTimeout(500);
+            const card = productCards.nth(index);
+
+            // Set quantity if needed (default is 1)
+            if (quantity !== 1) {
+                const quantityInput = card.locator('input[type="number"]');
+                if (await quantityInput.count() > 0) {
+                    await quantityInput.fill(quantity.toString());
+                    await this.page.waitForTimeout(200);
+                }
+            }
+
+            // Find the right modal - use the last one as it's likely the top-most
+            const modals = this.page.locator('[role="dialog"]');
+            const modalCount = await modals.count();
+            console.log(`Found ${modalCount} modals`);
+            const modal = modals.last();
+
+            // Debug: Print modal title
+            const title = await modal.locator('h2').first().innerText();
+            console.log(`Top-most modal title: "${title}"`);
+
+            // Debug: Print all buttons in the modal to see what we have
+            const allButtons = modal.locator('button');
+            const btnCount = await allButtons.count();
+            console.log(`Found ${btnCount} buttons in the top-most modal:`);
+            for (let i = 0; i < btnCount; i++) {
+                const text = await allButtons.nth(i).innerText();
+                console.log(`- Button ${i}: "${text}"`);
+            }
+
+            // Find the confirmation button using regex
+            const confirmButton = modal.locator('button').filter({ hasText: /商品を追加|Add/ }).first();
+
+            // NEW LOGIC: Check for "追加" (Add) buttons on cards (Alternative UI state)
+            const addButtons = modal.locator('button').filter({ hasText: /^追加$/ }); // Exact match to avoid partials if needed
+            const addButtonCount = await addButtons.count();
+
+            if (addButtonCount > 0 && await confirmButton.count() === 0) {
+                console.log(`Detected ${addButtonCount} "Add" (追加) buttons on cards. This is the 'Quick Add' UI.`);
+
+                // Click the first Add button
+                console.log('Clicking the first "Add" button...');
+                await addButtons.first().click();
+                await this.page.waitForTimeout(1000);
+
+                // Check if modal is still open
+                if (await modal.isVisible()) {
+                    console.log('Modal still open. Looking for "Close" (閉じる) button...');
+                    const closeButton = modal.locator('button').filter({ hasText: '閉じる' }).first();
+                    if (await closeButton.count() > 0) {
+                        console.log('Clicking "Close" button...');
+                        await closeButton.click();
+                    } else {
+                        console.log('No "Close" button found. Assuming modal closes automatically or we need to click outside.');
+                        // Optional: Click backdrop if needed
+                    }
+                }
+                return; // Done with this flow
+            }
+
+            // Verify button exists (Standard UI)
+            if (await confirmButton.count() === 0) {
+                console.log('CRITICAL: "Add Product" button not found in modal!');
+                const modalHtml = await modal.evaluate(el => el.outerHTML);
+                console.log(`Modal HTML (first 500 chars): ${modalHtml.substring(0, 500)}...`);
+                throw new Error('"Add Product" button not found');
+            }
+
+            // Try to enable it
+            let isEnabled = await confirmButton.isEnabled();
+            let attempts = 0;
+            const maxAttempts = 5;
+
+            while (!isEnabled && attempts < maxAttempts) {
+                console.log(`Attempt ${attempts + 1}/${maxAttempts} to enable "Add Product" button...`);
+
+                // Strategy 1: Click "Select" button
+                const selectButton = card.locator('button').filter({ hasText: '選択' }).first();
+                if (await selectButton.count() > 0) {
+                    console.log('Clicking "Select" button...');
+                    await selectButton.click({ force: true });
+                }
+
+                await this.page.waitForTimeout(1000);
+                isEnabled = await confirmButton.isEnabled();
+                if (isEnabled) break;
+
+                // Strategy 2: Click Image
+                const image = card.locator('img').first();
+                if (await image.count() > 0) {
+                    console.log('Clicking Product Image...');
+                    await image.click({ force: true });
+                }
+
+                await this.page.waitForTimeout(1000);
+                isEnabled = await confirmButton.isEnabled();
+                if (isEnabled) break;
+
+                // Strategy 3: Click Card Body (top left)
+                console.log('Clicking Card Body...');
+                await card.click({ force: true, position: { x: 20, y: 20 } });
+
+                await this.page.waitForTimeout(1000);
+                isEnabled = await confirmButton.isEnabled();
+
+                attempts++;
+            }
+
+            if (isEnabled) {
+                console.log('"Add Product" button is enabled. Clicking it...');
+                await confirmButton.click();
+            } else {
+                console.log('CRITICAL: "Add Product" button is still disabled after all attempts!');
+                await this.page.screenshot({ path: 'product_selection_failed.png' });
+                throw new Error('Could not enable "Add Product" button');
+            }
+
+            await this.page.waitForTimeout(1000);
         } else {
             throw new Error(`Product index ${index} out of range (found ${count} products)`);
         }
@@ -250,21 +375,31 @@ export class OrderCreationPage extends BasePage {
     async getAddedProducts(): Promise<Product[]> {
         const products: Product[] = [];
 
-        // Find product table/list in the form
-        const productRows = this.page.locator('tbody tr').filter({ has: this.page.locator('td') });
-        const count = await productRows.count();
+        // Actual DOM from user's HTML:
+        // <div class="MuiBox-root mui-q3vkmp">
+        //   <p class="MuiTypography-body2 mui-zt7ovo">Product Name</p>
+        //   <p class="MuiTypography-body2 mui-zt7ovo">¥3,510</p>
+        // </div>
+
+        const productContainers = this.page.locator('.MuiBox-root.mui-q3vkmp, div.mui-q3vkmp');
+        const count = await productContainers.count();
+
+        console.log(`Found ${count} products in cart`);
 
         for (let i = 0; i < count; i++) {
-            const row = productRows.nth(i);
-            const cells = row.locator('td');
-            const cellCount = await cells.count();
+            const container = productContainers.nth(i);
+            const paragraphs = container.locator('p.mui-zt7ovo, p.MuiTypography-body2');
 
-            if (cellCount >= 2) {
-                const name = await cells.nth(0).innerText();
-                const quantityText = await cells.nth(1).innerText();
-                const quantity = parseInt(quantityText) || 1;
+            const pCount = await paragraphs.count();
+            if (pCount >= 2) {
+                const name = await paragraphs.nth(0).innerText();
+                const priceText = await paragraphs.nth(1).innerText();
 
-                products.push({ name, quantity });
+                products.push({
+                    name,
+                    quantity: 1, // Default quantity
+                    price: priceText
+                });
             }
         }
 
@@ -349,14 +484,171 @@ export class OrderCreationPage extends BasePage {
         await notesInput.fill(notes);
     }
 
+    /**
+     * Click "Add Sender" button (依頼主を追加する)
+     * Clicks "Add New Address", fills form, then selects the new address
+     */
+    async clickAddSenderButton(): Promise<void> {
+        const addSenderButton = this.page.getByRole('button', { name: /依頼主.*追加|Add.*Sender/i });
+        await addSenderButton.click();
+        await this.page.waitForTimeout(1500);
+
+        // Click "Add New Address" button to open registration form
+        console.log('Clicking "Add New Address" button...');
+        const addNewButton = this.page.getByRole('button', { name: /新しい住所を追加|Add.*New/i });
+        await addNewButton.click();
+        await this.page.waitForTimeout(1000);
+
+        // Fill the registration form
+        console.log('Filling sender registration form...');
+        await this.page.locator('input[name="lastName"]').fill('テスト');
+        await this.page.locator('input[name="firstName"]').fill('太郎');
+        await this.page.locator('input[name="zipCode"]').fill('100-0001');
+        await this.page.waitForTimeout(1000);
+
+        // Select prefecture (required field)
+        const provinceSelect = this.page.locator('#select-provinceCode');
+        await provinceSelect.click();
+        await this.page.waitForTimeout(500);
+        // Select Tokyo (東京都)
+        await this.page.getByRole('option', { name: '東京都' }).click();
+        await this.page.waitForTimeout(500);
+
+        const city = await this.page.locator('input[name="city"]').inputValue();
+        if (!city) {
+            await this.page.locator('input[name="city"]').fill('千代田区');
+        }
+        await this.page.locator('input[name="address1"]').fill('千代田1-1');
+        await this.page.locator('input[name="phone"]').fill('03-1234-5678');
+
+        // Submit the form
+        console.log('Submitting sender registration...');
+        const submitButton = this.page.getByRole('button', { name: '住所を登録' });
+        await submitButton.click();
+        await this.page.waitForTimeout(2000);
+
+        // Close the registration modal by clicking Cancel
+        console.log('Closing registration modal...');
+        const cancelButton = this.page.getByRole('button', { name: 'キャンセル' }).last();
+        await cancelButton.click();
+        await this.page.waitForTimeout(1000);
+
+        // Now select the newly created address from the selection modal
+        console.log('Selecting newly created address...');
+        const addressCards = this.page.locator('[role="dialog"] .MuiCard-root');
+        const cardCount = await addressCards.count();
+        console.log(`Found ${cardCount} address cards`);
+
+        if (cardCount > 0) {
+            await addressCards.last().click(); // Click last card (newest)
+            await this.page.waitForTimeout(1000);
+        }
+
+        await this.waitForModalClose();
+    }
+
+    /**
+     * Click "Add Delivery Destination" button (配送先を追加)
+     * This should be called after adding sender to create a delivery group
+     * Handles two cases like sender: select existing or create new
+     */
+    async clickAddDeliveryDestinationButton(): Promise<void> {
+        const addDestButton = this.page.getByRole('button', { name: /配送先.*追加|Add.*Destination/i }).first();
+        await addDestButton.click();
+        await this.page.waitForTimeout(1000);
+
+        // Check if there are existing address cards to select
+        const modal = this.page.locator('[role="dialog"]').first();
+        const existingCards = modal.locator('.MuiCard-root');
+
+        if (await existingCards.count() > 0) {
+            console.log('Found existing delivery cards, selecting first one...');
+            await existingCards.first().click();
+            await this.page.waitForTimeout(1000);
+            return;
+        }
+
+        // No cards, click "Add New" to open Registration Modal
+        const addNewButton = modal.getByRole('button', { name: /新しい住所を追加|Add.*New/i });
+        if (await addNewButton.count() > 0) {
+            await addNewButton.click();
+            await this.page.waitForTimeout(1000);
+
+            // Fill form
+            await this.page.locator('input[name="lastName"]').fill('配送');
+            await this.page.locator('input[name="firstName"]').fill('太郎');
+            await this.page.locator('input[name="zipCode"]').fill('100-0001');
+            await this.page.waitForTimeout(1000);
+
+            // Select prefecture (required field)
+            const provinceSelect = this.page.locator('#select-provinceCode');
+            await provinceSelect.click();
+            await this.page.waitForTimeout(500);
+            // Select Tokyo (東京都)
+            await this.page.getByRole('option', { name: '東京都' }).click();
+            await this.page.waitForTimeout(500);
+
+            const city = await this.page.locator('input[name="city"]').inputValue();
+            if (!city) {
+                await this.page.locator('input[name="city"]').fill('千代田区');
+            }
+            await this.page.locator('input[name="address1"]').fill('千代田2-2');
+            await this.page.locator('input[name="phone"]').fill('03-5678-1234');
+
+            // Click Register
+            console.log('Clicking Register button...');
+            const registerButton = this.page.getByRole('button', { name: '住所を登録' });
+            await registerButton.click();
+
+            // Wait for registration to complete and modal to reload with address cards
+            console.log('Waiting 5s for registration and modal reload...');
+            await this.page.waitForTimeout(5000);
+
+            // Click the last address card (newest one)
+            const addressCards = this.page.locator('[role="dialog"] .MuiCard-root');
+            const cardCount = await addressCards.count();
+            console.log(`Found ${cardCount} address cards after registration`);
+
+            if (cardCount > 0) {
+                console.log('Clicking last address card to select it...');
+                await addressCards.last().click();
+                await this.page.waitForTimeout(1000);
+            } else {
+                console.log('ERROR: No address cards found after registration!');
+            }
+
+            // Final cleanup
+            if (await this.page.locator('[role="dialog"]').count() > 0) {
+                console.log('Pressing ESC to close any remaining modals');
+                await this.page.keyboard.press('Escape');
+            }
+
+            await this.waitForModalClose();
+        }
+    }
+
     // ============ Submission ============
 
     /**
      * Submit order
      */
     async submitOrder(): Promise<void> {
-        const submitButton = this.page.getByRole('button', { name: /登録|作成|Submit|Create/i });
+        // Updated selector based on actual HTML: "注文を確定"
+        const submitButton = this.page.getByRole('button', { name: '注文を確定' }).first();
         await submitButton.click();
+
+        // Wait for confirmation modal to appear
+        console.log('Waiting for confirmation modal...');
+        await this.page.waitForTimeout(1000);
+
+        // Click the "Confirm" (確定する) button in the confirmation modal
+        const confirmButton = this.page.locator('button').filter({ hasText: '確定する' }).first();
+        if (await confirmButton.count() > 0) {
+            console.log('Clicking "Confirm" (確定する) button in confirmation modal...');
+            await confirmButton.click();
+        } else {
+            console.log('Warning: Confirmation button not found. Proceeding...');
+        }
 
         // Wait for navigation or success message
         await Promise.race([
