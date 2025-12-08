@@ -10,6 +10,8 @@ export interface Address {
     street?: string;
     building?: string;
     name?: string;
+    lastName?: string;
+    firstName?: string;
     phone?: string;
 }
 
@@ -28,16 +30,50 @@ export class AddressFormHelper {
     async fillAddressForm(address: Address, formLocator?: Locator): Promise<void> {
         const form = formLocator || this.page.locator('form, [role="dialog"]').first();
 
-        if (address.name) {
+        // Handle split names (Last/First)
+        if (address.lastName) {
+            const input = form.locator('input[name="lastName"]');
+            if (await input.count() > 0) {
+                await input.fill(address.lastName);
+                await this.page.waitForTimeout(200);
+            } else {
+                await this.fillField(form, /姓|Last Name/i, address.lastName);
+            }
+        }
+
+        if (address.firstName) {
+            const input = form.locator('input[name="firstName"]');
+            if (await input.count() > 0) {
+                await input.fill(address.firstName);
+                await this.page.waitForTimeout(200);
+            } else {
+                await this.fillField(form, /名|First Name/i, address.firstName);
+            }
+        }
+
+        // Handle full name if split names not provided or needed
+        if (address.name && !address.lastName && !address.firstName) {
             await this.fillField(form, /氏名|名前|Name/i, address.name);
         }
 
         if (address.phone) {
-            await this.fillField(form, /電話|Phone/i, address.phone);
+            const input = form.locator('input[name="phone"]');
+            if (await input.count() > 0) {
+                await input.fill(address.phone);
+                await this.page.waitForTimeout(200);
+            } else {
+                await this.fillField(form, /電話|Phone/i, address.phone);
+            }
         }
 
         if (address.postalCode) {
-            await this.fillField(form, /郵便番号|Postal/i, address.postalCode);
+            const input = form.locator('input[name="zipCode"]'); // Common name in this app
+            if (await input.count() > 0) {
+                await input.fill(address.postalCode);
+                await this.page.waitForTimeout(200);
+            } else {
+                await this.fillField(form, /郵便番号|Postal/i, address.postalCode);
+            }
         }
 
         if (address.prefecture) {
@@ -45,15 +81,33 @@ export class AddressFormHelper {
         }
 
         if (address.city) {
-            await this.fillField(form, /市区町村|City/i, address.city);
+            const input = form.locator('input[name="city"]');
+            if (await input.count() > 0) {
+                await input.fill(address.city);
+                await this.page.waitForTimeout(200);
+            } else {
+                await this.fillField(form, /市区町村|City/i, address.city);
+            }
         }
 
         if (address.street) {
-            await this.fillField(form, /番地|Street|Address/i, address.street);
+            const input = form.locator('input[name="address1"]');
+            if (await input.count() > 0) {
+                await input.fill(address.street);
+                await this.page.waitForTimeout(200);
+            } else {
+                await this.fillField(form, /番地|Street|Address/i, address.street);
+            }
         }
 
         if (address.building) {
-            await this.fillField(form, /建物|Building/i, address.building);
+            const input = form.locator('input[name="address2"]');
+            if (await input.count() > 0) {
+                await input.fill(address.building);
+                await this.page.waitForTimeout(200);
+            } else {
+                await this.fillField(form, /建物|Building/i, address.building);
+            }
         }
     }
 

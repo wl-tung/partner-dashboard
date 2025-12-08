@@ -19,6 +19,8 @@ export const OrderCreationConfig = {
         formSubmit: 5000,
         /** Network idle timeout */
         networkIdle: 5000,
+        /** Search debounce wait */
+        searchDebounce: 500,
     },
 
     /**

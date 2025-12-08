@@ -63,11 +63,15 @@ test.describe('Order Creation - Happy Path', () => {
         await orderCreationPage.goto();
 
         // Step 1: Select customer
+        // NOTE: Customer must have Shopify ID for address registration to work
+        // Using customer at index 0: "大嶋 まち" (has Shopify ID)
+        // See BUG_SHOPIFY_ID_REQUIRED.md for details
         console.log('Step 1: Selecting customer...');
         await orderCreationPage.openCustomerSelectionModal();
-        await orderCreationPage.selectCustomer(1); // Try different customer
+        await orderCreationPage.selectCustomer(0); // "大嶋 まち" - first customer
         const customerInfo = await orderCreationPage.getSelectedCustomerInfo();
-        await orderCreationPage.verifyCustomerSelected(); // Keep verification
+        console.log(`Selected customer: ${customerInfo.name}`);
+        await orderCreationPage.verifyCustomerSelected();
 
         // Step 2: Navigate to Delivery Info tab
         console.log('Step 2: Navigating to Delivery Info...');
@@ -244,7 +248,7 @@ test.describe('Order Creation - Happy Path', () => {
             console.log('Redirected to Orders List page. Verifying top order...');
             await page.waitForSelector('table tbody tr');
             const firstRow = page.locator('table tbody tr').first();
-            await expect(firstRow).toContainText('検証真鳥'); // Verify customer name in first row
+            await expect(firstRow).toContainText('大嶋'); // Verify customer name in first row
         }
 
         console.log('✅ Full order creation flow with submission and verification completed successfully!');

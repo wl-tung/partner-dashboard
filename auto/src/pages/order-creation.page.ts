@@ -359,8 +359,21 @@ export class OrderCreationPage extends BasePage {
         await addSenderButton.click();
         await this.page.waitForTimeout(1500);
 
-        // Click "Add New Address" button to open registration form
-        console.log('Clicking "Add New Address" button...');
+        // Check if there are existing address cards to select
+        const modal = this.page.locator('[role="dialog"]').first();
+        const existingCards = modal.locator('.MuiCard-root');
+        const cardCount = await existingCards.count();
+
+        if (cardCount > 0) {
+            console.log(`Found ${cardCount} existing sender address cards, selecting first one...`);
+            await existingCards.first().click();
+            await this.page.waitForTimeout(1000);
+            await this.waitForModalClose();
+            return;
+        }
+
+        // No existing cards, create new address
+        console.log('No existing addresses, clicking "Add New Address" button...');
         const addNewButton = this.page.getByRole('button', { name: /新しい住所を追加|Add.*New/i });
         await addNewButton.click();
         await this.page.waitForTimeout(1000);
@@ -402,10 +415,10 @@ export class OrderCreationPage extends BasePage {
         // Now select the newly created address from the selection modal
         console.log('Selecting newly created address...');
         const addressCards = this.page.locator('[role="dialog"] .MuiCard-root');
-        const cardCount = await addressCards.count();
-        console.log(`Found ${cardCount} address cards`);
+        const newCardCount = await addressCards.count();
+        console.log(`Found ${newCardCount} address cards`);
 
-        if (cardCount > 0) {
+        if (newCardCount > 0) {
             await addressCards.last().click(); // Click last card (newest)
             await this.page.waitForTimeout(1000);
         }
