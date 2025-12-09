@@ -200,10 +200,26 @@ export class PreApplicationsListPage {
      */
     async clickActionButton(index: number): Promise<void> {
         TestLogger.log(`Clicking action button for row ${index}`);
-        const row = this.tableRows.nth(index);
+        const rows = this.tableRows;
+        const row = rows.nth(index);
+
+        // The action button is in the last cell with an IconButton containing the 3-dot icon
+        // Path: d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2m0 2c-1.1 0-2 .9-2 2s.9 2 2 2..."
         const actionButton = row.locator('button.MuiIconButton-root').last();
         await actionButton.click();
-        await this.page.waitForTimeout(500);
+
+        // Wait for the menu to appear
+        await this.page.waitForSelector('ul[role="menu"]', { state: 'visible' });
+        TestLogger.log('Action menu opened');
+    }
+
+    async clickActionMenu(index: number, action: '編集' | '削除'): Promise<void> {
+        await this.clickActionButton(index);
+
+        // Click the menu item
+        const menuItem = this.page.getByRole('menuitem', { name: action });
+        await menuItem.click();
+        TestLogger.log(`Clicked ${action} from menu`);
     }
 
     // ============ Actions ============
