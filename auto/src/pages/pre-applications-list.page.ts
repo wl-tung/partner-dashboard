@@ -44,7 +44,9 @@ export class PreApplicationsListPage {
      * Create New button - 新規作成
      */
     private get createNewButton(): Locator {
-        return this.page.getByRole('button', { name: '新規作成' });
+        // Button has an icon before the text, so accessible name doesn't match exactly
+        // Using hasText filter instead
+        return this.page.locator('button').filter({ hasText: '新規作成' });
     }
 
     /**
@@ -230,7 +232,9 @@ export class PreApplicationsListPage {
     async clickCreateNew(): Promise<void> {
         TestLogger.log('Clicking Create New button...');
         await this.createNewButton.click();
-        await this.page.waitForTimeout(1000); // Wait for form/modal to open
+        // Wait for modal to appear
+        await this.page.waitForSelector('.MuiDialog-root', { state: 'visible', timeout: 5000 });
+        TestLogger.log('Create modal opened');
     }
 
     /**
